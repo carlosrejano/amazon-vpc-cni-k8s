@@ -813,15 +813,15 @@ func isRuleExistsError(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envConnmark:             getConnmark(),
-		envExcludeSNATCIDRs:     parseCIDRString(envExcludeSNATCIDRs),
-		envIncludeSNATCIDRs:     parseCIDRString(envIncludeSNATCIDRs),
-		envExternalSNAT:         useExternalSNAT(),
-		envExternalServiceCIDRs: parseCIDRString(envExternalServiceCIDRs),
-		envMTU:                  GetEthernetMTU(""),
-		envVethPrefix:           getVethPrefixName(),
-		envNodePortSupport:      nodePortSupportEnabled(),
-		envRandomizeSNAT:        typeOfSNAT(),
+		envConnmark:              getConnmark(),
+		envExcludeSNATCIDRs:      parseCIDRString(envExcludeSNATCIDRs),
+		envIncludeVPCCIDRsToSNAT: parseCIDRString(envIncludeVPCCIDRsToSNAT),
+		envExternalSNAT:          useExternalSNAT(),
+		envExternalServiceCIDRs:  parseCIDRString(envExternalServiceCIDRs),
+		envMTU:                   GetEthernetMTU(""),
+		envVethPrefix:            getVethPrefixName(),
+		envNodePortSupport:       nodePortSupportEnabled(),
+		envRandomizeSNAT:         typeOfSNAT(),
 	}
 }
 
