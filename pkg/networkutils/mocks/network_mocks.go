@@ -64,6 +64,19 @@ func (mr *MockNetworkAPIsMockRecorder) GetExcludeSNATCIDRs() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExcludeSNATCIDRs", reflect.TypeOf((*MockNetworkAPIs)(nil).GetExcludeSNATCIDRs))
 }
 
+// GetIncludeSNATCIDRs mocks base method.
+func (m *MockNetworkAPIs) GetIncludeVPCCIDRsToSNAT() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIncludeVPCCIDRsToSNAT")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+func (mr *MockNetworkAPIsMockRecorder) GetIncludeVPCCIDRsToSNAT() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIncludeVPCCIDRsToSNAT", reflect.TypeOf((*MockNetworkAPIs)(nil).GetIncludeVPCCIDRsToSNAT()))
+}
+
 // GetExternalServiceCIDRs mocks base method.
 func (m *MockNetworkAPIs) GetExternalServiceCIDRs() []string {
 	m.ctrl.T.Helper()

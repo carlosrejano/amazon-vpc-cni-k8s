@@ -30,6 +30,7 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/sgpp"
+	"github.com/aws/amazon-vpc-cni-k8s/utils"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -86,6 +87,12 @@ const (
 	// will be written to the iptables for each item. If an item is not an ipv4 range it will be skipped.
 	// Defaults to empty.
 	envExcludeSNATCIDRs = "AWS_VPC_K8S_CNI_EXCLUDE_SNAT_CIDRS"
+
+	// This environment is used to specify a comma-separated list of IPv4 CIDRs to include in SNAT. No iptables rules will
+	// be written for each item. If an item is not an ipv4 range it will be skipped.
+	// Defaults to empty
+
+	envIncludeVPCCIDRsToSNAT = "AWS_VPC_K8S_CNI_INCLUDE_VPC_CIDRS_TO_SNAT"
 
 	// This environment is used to specify a comma-separated list of IPv4 CIDRs that require routing lookup in
 	// main routing table. An IP rule is created for each CIDR.
@@ -155,6 +162,7 @@ type NetworkAPIs interface {
 	UpdateHostIptablesRules(vpcCIDRs []string, primaryMAC string, primaryAddr *net.IP, v4Enabled bool, v6Enabled bool) error
 	UseExternalSNAT() bool
 	GetExcludeSNATCIDRs() []string
+	GetIncludeVPCCIDRsToSNAT() []string
 	GetExternalServiceCIDRs() []string
 	GetRuleList() ([]netlink.Rule, error)
 	GetRuleListBySrc(ruleList []netlink.Rule, src net.IPNet) ([]netlink.Rule, error)
@@ -167,6 +175,7 @@ type linuxNetwork struct {
 	useExternalSNAT        bool
 	ipv6EgressEnabled      bool
 	excludeSNATCIDRs       []string
+	includeVPCCIDRsToSNAT  []string
 	externalServiceCIDRs   []string
 	typeOfSNAT             snatType
 	nodePortSupportEnabled bool
@@ -194,6 +203,7 @@ func New() NetworkAPIs {
 		useExternalSNAT:        useExternalSNAT(),
 		ipv6EgressEnabled:      ipV6EgressEnabled(),
 		excludeSNATCIDRs:       parseCIDRString(envExcludeSNATCIDRs),
+		includeVPCCIDRsToSNAT:  parseCIDRString(envIncludeVPCCIDRsToSNAT),
 		externalServiceCIDRs:   parseCIDRString(envExternalServiceCIDRs),
 		typeOfSNAT:             typeOfSNAT(),
 		nodePortSupportEnabled: nodePortSupportEnabled(),
@@ -418,9 +428,13 @@ func (n *linuxNetwork) buildIptablesSNATRules(vpcCIDRs []string, primaryAddr *ne
 		isExclusion bool
 	}
 	var allCIDRs []snatCIDR
+	includeCIDRsToSNAT := sets.NewString(n.includeVPCCIDRsToSNAT...)
+
 	for _, cidr := range vpcCIDRs {
-		log.Debugf("Adding %s CIDR to NAT chain", cidr)
-		allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
+		if !includeCIDRsToSNAT.Has(cidr) {
+			log.Debugf("Adding %s CIDR to NAT chain", cidr)
+			allCIDRs = append(allCIDRs, snatCIDR{cidr: cidr, isExclusion: false})
+		}
 	}
 	for _, cidr := range n.excludeSNATCIDRs {
 		log.Debugf("Adding %s Excluded CIDR to NAT chain", cidr)
@@ -550,6 +564,8 @@ func (n *linuxNetwork) buildIptablesConnmarkRules(vpcCIDRs []string, ipt iptable
 	allCIDRs = append(allCIDRs, vpcCIDRs...)
 	allCIDRs = append(allCIDRs, n.excludeSNATCIDRs...)
 	excludeCIDRs := sets.NewString(n.excludeSNATCIDRs...)
+
+	allCIDRs = utils.DifferenceBetweensStringSlices(allCIDRs, n.includeVPCCIDRsToSNAT)
 
 	log.Debugf("Total CIDRs to exempt from connmark rules - %d", len(allCIDRs))
 	var chains []string
@@ -797,14 +813,15 @@ func isRuleExistsError(err error) bool {
 // GetConfigForDebug returns the active values of the configuration env vars (for debugging purposes).
 func GetConfigForDebug() map[string]interface{} {
 	return map[string]interface{}{
-		envConnmark:             getConnmark(),
-		envExcludeSNATCIDRs:     parseCIDRString(envExcludeSNATCIDRs),
-		envExternalSNAT:         useExternalSNAT(),
-		envExternalServiceCIDRs: parseCIDRString(envExternalServiceCIDRs),
-		envMTU:                  GetEthernetMTU(""),
-		envVethPrefix:           getVethPrefixName(),
-		envNodePortSupport:      nodePortSupportEnabled(),
-		envRandomizeSNAT:        typeOfSNAT(),
+		envConnmark:              getConnmark(),
+		envExcludeSNATCIDRs:      parseCIDRString(envExcludeSNATCIDRs),
+		envIncludeVPCCIDRsToSNAT: parseCIDRString(envIncludeVPCCIDRsToSNAT),
+		envExternalSNAT:          useExternalSNAT(),
+		envExternalServiceCIDRs:  parseCIDRString(envExternalServiceCIDRs),
+		envMTU:                   GetEthernetMTU(""),
+		envVethPrefix:            getVethPrefixName(),
+		envNodePortSupport:       nodePortSupportEnabled(),
+		envRandomizeSNAT:         typeOfSNAT(),
 	}
 }
 
@@ -834,6 +851,15 @@ func (n *linuxNetwork) GetExcludeSNATCIDRs() []string {
 		return nil
 	}
 	return parseCIDRString(envExcludeSNATCIDRs)
+}
+
+// GetIncludeSNATCIDRs returns a list of CIDRs that should be included in SNAT if UseExternalSNAT is false,
+// otherwise it returns an empty list.
+func (n *linuxNetwork) GetIncludeVPCCIDRsToSNAT() []string {
+	if useExternalSNAT() {
+		return nil
+	}
+	return parseCIDRString(envIncludeVPCCIDRsToSNAT)
 }
 
 // GetExternalServiceCIDRs return a list of CIDRs that should always be routed to via main routing table.
